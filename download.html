@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -135,26 +136,12 @@
       color: #555;
     }
 
-    .progress-bar {
-      width: 100%;
-      height: 8px;
-      background: #e0e0e0;
-      border-radius: 10px;
-      margin-top: 15px;
-      overflow: hidden;
+    /* Hidden iframe for download */
+    #downloadFrame {
       display: none;
-    }
-
-    .progress-bar.show {
-      display: block;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      width: 0%;
-      transition: width 0.3s ease;
-      border-radius: 10px;
+      width: 0;
+      height: 0;
+      border: none;
     }
   </style>
 </head>
@@ -174,12 +161,11 @@
       <span>⬇</span> Download Now
     </button>
     
-    <div class="progress-bar" id="progressBar">
-      <div class="progress-fill" id="progressFill"></div>
-    </div>
-    
     <div class="status" id="status"></div>
   </div>
+
+  <!-- Hidden iframe for background download -->
+  <iframe id="downloadFrame" name="downloadFrame"></iframe>
 
   <script>
     const params = new URLSearchParams(window.location.search);
@@ -189,8 +175,7 @@
     const statusBox = document.getElementById('status');
     const fileInfo = document.getElementById('fileInfo');
     const fileName = document.getElementById('fileName');
-    const progressBar = document.getElementById('progressBar');
-    const progressFill = document.getElementById('progressFill');
+    const downloadFrame = document.getElementById('downloadFrame');
 
     function showStatus(message, type) {
       const icons = {
@@ -207,19 +192,6 @@
       statusBox.classList.remove('show');
     }
 
-    function showProgress(show) {
-      if (show) {
-        progressBar.classList.add('show');
-      } else {
-        progressBar.classList.remove('show');
-        progressFill.style.width = '0%';
-      }
-    }
-
-    function updateProgress(percent) {
-      progressFill.style.width = percent + '%';
-    }
-
     if (!fileUrl) {
       showStatus('No file provided in URL parameter.', 'error');
       downloadBtn.disabled = true;
@@ -231,104 +203,85 @@
       fileInfo.style.display = 'block';
     }
 
-    async function downloadFile() {
-      showStatus('Preparing your download...', 'loading');
-      showProgress(true);
-      downloadBtn.disabled = true;
-
+    function downloadFile() {
       try {
-        // Use XMLHttpRequest for better control and to prevent navigation
-        const xhr = new XMLHttpRequest();
+        showStatus('Preparing your download...', 'loading');
+        downloadBtn.disabled = true;
+
+        // Extract filename from URL
+        const urlParts = fileUrl.split('/');
+        let filename = urlParts[urlParts.length - 1].split('?')[0] || 'download.pdf';
+        filename = decodeURIComponent(filename);
+
+        // Method 1: Try creating a download link
+        const link = document.createElement('a');
+        link.href = fileUrl;
+        link.download = filename;
+        link.target = 'downloadFrame'; // Use iframe as target
+        link.style.display = 'none';
         
-        xhr.open('GET', fileUrl, true);
-        xhr.responseType = 'blob';
+        document.body.appendChild(link);
+        
+        // Trigger download
+        link.click();
+        
+        // Remove link after a moment
+        setTimeout(() => {
+          document.body.removeChild(link);
+        }, 100);
 
-        // Track download progress
-        xhr.onprogress = function(e) {
-          if (e.lengthComputable) {
-            const percentComplete = (e.loaded / e.total) * 100;
-            updateProgress(percentComplete);
-          } else {
-            // If we can't track progress, animate it
-            let progress = 0;
-            const interval = setInterval(() => {
-              progress += 5;
-              if (progress >= 90) {
-                clearInterval(interval);
-              }
-              updateProgress(progress);
-            }, 100);
-          }
-        };
+        // Set iframe src as backup method
+        setTimeout(() => {
+          downloadFrame.src = fileUrl;
+        }, 200);
 
-        xhr.onload = function() {
-          if (xhr.status === 200) {
-            updateProgress(100);
-            
-            // Get the blob
-            const blob = xhr.response;
-            
-            // Create blob URL
-            const blobUrl = URL.createObjectURL(blob);
-            
-            // Extract filename
-            const urlParts = fileUrl.split('/');
-            let filename = urlParts[urlParts.length - 1].split('?')[0] || 'download.pdf';
-            filename = decodeURIComponent(filename);
-            
-            // Create a hidden anchor and trigger download
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = blobUrl;
-            a.download = filename;
-            
-            // Add to DOM temporarily
-            document.body.appendChild(a);
-            
-            // Trigger download WITHOUT navigation
-            a.click();
-            
-            // Clean up immediately
-            setTimeout(() => {
-              document.body.removeChild(a);
-              URL.revokeObjectURL(blobUrl);
-            }, 100);
-            
-            showStatus('Download started successfully!', 'success');
-            showProgress(false);
-            downloadBtn.disabled = false;
-            
-          } else {
-            throw new Error('Download failed with status: ' + xhr.status);
-          }
-        };
+        // Show success message
+        setTimeout(() => {
+          showStatus('Download started successfully!', 'success');
+          downloadBtn.disabled = false;
+        }, 800);
 
-        xhr.onerror = function() {
-          throw new Error('Network error occurred');
-        };
-
-        // Send the request
-        xhr.send();
-
-      } catch (error) {
-        console.error('Download error:', error);
+      } catch (err) {
+        console.error('Download failed:', err);
         showStatus('Download unsuccessful. Please try again.', 'error');
-        showProgress(false);
         downloadBtn.disabled = false;
       }
     }
 
-    downloadBtn.addEventListener('click', function(e) {
+    // Alternative download using form submission
+    function downloadViaForm() {
+      const form = document.createElement('form');
+      form.method = 'GET';
+      form.action = fileUrl;
+      form.target = 'downloadFrame';
+      form.style.display = 'none';
+      
+      document.body.appendChild(form);
+      form.submit();
+      
+      setTimeout(() => {
+        document.body.removeChild(form);
+      }, 100);
+    }
+
+    downloadBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      e.stopPropagation();
       hideStatus();
+      
+      // Try primary method
       downloadFile();
+      
+      // Try form method as backup after 1 second
+      setTimeout(() => {
+        downloadViaForm();
+      }, 1000);
     });
 
-    // Prevent any accidental navigation
-    window.addEventListener('beforeunload', function(e) {
-      // This will NOT trigger for downloads, only for actual navigation
-      // So we're safe here
+    // Monitor iframe for load event
+    downloadFrame.addEventListener('load', function() {
+      if (this.src && this.src !== 'about:blank') {
+        console.log('Download initiated via iframe');
+      }
     });
   </script>
 
